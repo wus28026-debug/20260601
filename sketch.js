@@ -1,6 +1,7 @@
 let monsters = [];
 let explosionParticles = [];
 let missiles = []; // 新增飛彈陣列
+let powerUps = []; // 新增道具陣列
 let colors = ['#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff', '#fffffc'];
 let lastSpawnTime = 0;
 let score = 0; // 新增計分變數
@@ -35,12 +36,13 @@ function startGame() {
   monsters = [];
   missiles = [];
   explosionParticles = [];
+  powerUps = [];
   startTime = millis();
   lastSpawnTime = millis();
   startButton.hide();
   
-  // 初始產生 20 個物件 (原為 10)
-  for (let i = 0; i < 20; i++) {
+  // 初始產生更多物件 (從 20 增加到 30)
+  for (let i = 0; i < 30; i++) {
     spawnMonster();
   }
 }
@@ -73,14 +75,15 @@ function draw() {
   // 隨著時間產生的物件越多 (間隔從 5秒 縮短至 0.8秒)
   let elapsed = (millis() - startTime) / 1000;
   
-  // 檢查時間是否結束
-  if (elapsed >= gameDuration) {
+  // 檢查勝負條件：分數達標即成功，時間結束未達標則失敗
+  if (score >= 100 || elapsed >= gameDuration) {
     gameState = "GAMEOVER";
     return;
   }
 
   // 縮短產生間隔，讓怪物更多 (從 3秒 到 0.4秒 產生一個)
-  let spawnInterval = map(min(elapsed, gameDuration), 0, gameDuration, 3000, 400);
+  // 進一步縮短產生間隔，讓怪物數量更多 (從 0.4秒 縮短至 0.2秒)
+  let spawnInterval = map(min(elapsed, gameDuration), 0, gameDuration, 3000, 200);
   if (millis() - lastSpawnTime > spawnInterval) {
     spawnMonster();
     lastSpawnTime = millis();
@@ -114,10 +117,40 @@ function draw() {
         m.explode(); // 怪物爆炸
         monsters.splice(j, 1); // 移除怪物
         missiles[i].active = false; // 飛彈失效
-        // 擊中心型獲得雙倍積分 (10分)，其他形狀 5分
-        score += (m.shapeType === 'HEART') ? 10 : 5;
+        // 分數邏輯：擊中心型 +10，擊中惡魔 -5，其他 +5
+        if (m.shapeType === 'HEART') {
+          score += 10;
+        } else if (m.shapeType === 'DEMON') {
+          score -= 5;
+        } else {
+          score += 5;
+        }
+
+        // 15% 機率掉落增加時間的道具
+        if (random() < 0.15) {
+          powerUps.push(new PowerUp(m.pos.x, m.pos.y));
+        }
         break; // 飛彈只會擊中一個怪物，所以檢查完畢後跳出內層迴圈
       }
+    }
+
+    // 檢查飛彈與道具的碰撞
+    for (let j = powerUps.length - 1; j >= 0; j--) {
+      if (missiles[i].active && powerUps[j].checkCollision(missiles[i])) {
+        gameDuration += 5; // 增加 5 秒遊戲時間
+        powerUps.splice(j, 1);
+        missiles[i].active = false;
+        break;
+      }
+    }
+  }
+
+  // 更新與顯示道具，並移除超出畫面的道具
+  for (let i = powerUps.length - 1; i >= 0; i--) {
+    powerUps[i].update();
+    powerUps[i].display();
+    if (!powerUps[i].active) {
+      powerUps.splice(i, 1);
     }
   }
 
@@ -140,15 +173,19 @@ function drawMenu() {
   textSize(50);
   text("粒子射擊遊戲", width / 2, height / 2 - 80);
   textSize(20);
-  text("擊中心型獲得雙倍積分！左鍵發射，右鍵產生怪物", width / 2, height / 2 - 30);
+  text("目標 100 分挑戰！擊中心型 +10，擊中惡魔 -5。左鍵發射，右鍵產生怪物", width / 2, height / 2 - 30);
 }
 
 function drawGameOver() {
-  fill(255);
   textAlign(CENTER, CENTER);
+
+  let isWin = score >= 100;
+  let resultText = isWin ? "挑戰成功" : "挑戰失敗";
+  let resultColor = isWin ? '#9bf6ff' : '#ffadad'; // 成功用粉藍，失敗用粉紅
+
   textSize(60);
-  fill('#ffadad');
-  text("遊戲結束", width / 2, height / 2 - 100);
+  fill(resultColor);
+  text(resultText, width / 2, height / 2 - 100);
   textSize(30);
   fill(255);
   text(`最終分數: ${score}`, width / 2, height / 2 - 40);
@@ -200,9 +237,9 @@ function drawRainbowBackground() {
 }
 
 function spawnMonster(spawnX, spawnY) {
-  // 隨著時間越到後面，產生的例子越小 (比例從 1.0 縮小到 0.3)
+  // 隨著時間越到後面，產生的例子縮小幅度減小 (比例從 1.0 調整為最小 0.6)
   let elapsed = (millis() - startTime) / 1000;
-  let sizeScale = map(min(elapsed, gameDuration), 0, gameDuration, 1.0, 0.3);
+  let sizeScale = map(min(elapsed, gameDuration), 0, gameDuration, 1.0, 0.6);
   let size = random(40, 100) * sizeScale;
 
   // 如果有傳入座標則使用該座標，否則隨機產生
@@ -243,7 +280,7 @@ class Monster {
     this.size = s;
     this.color = c;
     // 隨機分配形狀類型
-    this.shapeType = random(['HEART', 'TEARDROP', 'TRAPEZOID', 'STAR', 'CIRCLE', 'SQUARE']);
+    this.shapeType = random(['HEART', 'TEARDROP', 'TRAPEZOID', 'STAR', 'CIRCLE', 'SQUARE', 'DEMON']); // 減少惡魔出現的機率
   }
 
   update() {
@@ -278,7 +315,7 @@ class Monster {
   // 怪物爆炸效果
   explode() {
     shakeAmount = 15; // 飛彈擊中時給予強烈震動
-    for (let i = 0; i < 80; i++) { // 增加粒子數量至 80，讓爆炸更華麗
+    for (let i = 0; i < 120; i++) { // 增加粒子數量至 120，讓爆炸更華麗
       explosionParticles.push(new ExplosionParticle(this.pos.x, this.pos.y, this.color));
     }
   }
@@ -287,8 +324,16 @@ class Monster {
     push();
     translate(this.pos.x, this.pos.y);
     
+    let elapsed = (millis() - startTime) / 1000;
+    let isUrgent = (gameDuration - elapsed <= 10);
+
     let d = dist(mouseX, mouseY, this.pos.x, this.pos.y);
-    fill(this.color);
+    // 最後 10 秒進入緊急狀態，怪物閃爍白色，頻率放慢
+    if (isUrgent && floor(frameCount / 10) % 2 === 0) {
+      fill(255);
+    } else {
+      fill(this.color);
+    }
     noStroke();
 
     // 判斷滑鼠靠近則變為圓形，否則為星狀圓弧
@@ -304,11 +349,26 @@ class Monster {
     this.drawEye(-eyeOffset, -eyeOffset / 2, eyeSize);
     this.drawEye(eyeOffset, -eyeOffset / 2, eyeSize);
 
-    // 繪製笑嘴
+    // 繪製表情 (嘴巴與眉毛)
     noFill();
     stroke(0);
-    strokeWeight(2);
-    arc(0, this.size * 0.1, this.size * 0.4, this.size * 0.3, 0, PI);
+    strokeWeight(this.size * 0.03); 
+    
+    if (isUrgent || this.shapeType === 'DEMON') {
+      // 邪惡的倒弧嘴巴 (惡魔固定使用顛倒嘴巴)
+      arc(0, this.size * 0.2, this.size * 0.4, this.size * 0.2, PI, TWO_PI);
+      
+      // 邪惡的斜角眉毛
+      let browW = this.size * 0.15;
+      let browH = this.size * 0.1;
+      // 左眉
+      line(-eyeOffset - browW, -eyeOffset - browH, -eyeOffset + browW * 0.5, -eyeOffset);
+      // 右眉
+      line(eyeOffset + browW, -eyeOffset - browH, eyeOffset - browW * 0.5, -eyeOffset);
+    } else {
+      // 正常的笑嘴
+      arc(0, this.size * 0.1, this.size * 0.4, this.size * 0.3, 0, PI);
+    }
     
     pop();
   }
@@ -352,6 +412,20 @@ class Monster {
       case 'SQUARE':
         rectMode(CENTER);
         rect(0, 0, this.size * 0.8, this.size * 0.8);
+        break;
+      case 'DEMON':
+        ellipse(0, 0, this.size * 0.8);
+        // 繪製惡魔角
+        beginShape();
+        vertex(-this.size * 0.35, -this.size * 0.1);
+        vertex(-this.size * 0.2, -this.size * 0.5);
+        vertex(-this.size * 0.05, -this.size * 0.2);
+        endShape(CLOSE);
+        beginShape();
+        vertex(this.size * 0.35, -this.size * 0.1);
+        vertex(this.size * 0.2, -this.size * 0.5);
+        vertex(this.size * 0.05, -this.size * 0.2);
+        endShape(CLOSE);
         break;
     }
   }
@@ -456,5 +530,49 @@ class Missile {
   checkCollision(monster) {
     let d = dist(this.pos.x, this.pos.y, monster.pos.x, monster.pos.y);
     return d < this.radius + monster.size / 2; // 如果距離小於兩者半徑之和，則發生碰撞
+  }
+}
+
+// 新增 PowerUp 類別
+class PowerUp {
+  constructor(x, y) {
+    this.baseX = x; // 紀錄道具產生時的水平位置
+    this.pos = createVector(x, y);
+    this.vel = createVector(0, 1.5); // 道具下落速度減慢，增加停留時間
+    this.angle = random(TWO_PI);   // 隨機初始相位，讓不同道具擺動錯開
+    this.size = 50; // 尺寸變大
+    this.active = true;
+  }
+
+  update() {
+    this.pos.y += this.vel.y; // 保持穩定的向下掉落
+    this.angle += 0.05;       // 擺動的速度 (數字越大擺動越快)
+    // 利用 sin 函數計算偏移量，40 為擺動的幅度 (左右各 40 像素)
+    this.pos.x = this.baseX + sin(this.angle) * 40;
+
+    // 如果超出畫面底部則消失
+    if (this.pos.y > height + this.size) {
+      this.active = false;
+    }
+  }
+
+  display() {
+    push();
+    translate(this.pos.x, this.pos.y);
+    fill(0, 255, 150); // 道具顏色（亮綠色）
+    stroke(255);
+    strokeWeight(2);
+    ellipse(0, 0, this.size);
+    fill(255);
+    noStroke();
+    textAlign(CENTER, CENTER);
+    textSize(20); // 配合尺寸增加文字大小
+    text("+5s", 0, 0); // 顯示效果文字
+    pop();
+  }
+
+  checkCollision(missile) {
+    let d = dist(this.pos.x, this.pos.y, missile.pos.x, missile.pos.y);
+    return d < this.size / 2 + missile.radius;
   }
 }
