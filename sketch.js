@@ -48,8 +48,8 @@ function startGame() {
 }
 
 function draw() {
-  // 當分數達到 100 分時，啟動彩虹背景效果
-  if (score >= 100) {
+  // 當分數達到 50 分時，啟動彩虹背景效果
+  if (score >= 50) {
     drawRainbowBackground();
   } else {
     background(0); // 全螢幕背景黑色
